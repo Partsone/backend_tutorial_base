@@ -3,76 +3,73 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\DestroyCommentRequest;
+use App\Http\Requests\StoreCommentRequest;
+use App\Http\Requests\UpdateCommentRequest;
+use App\Http\Resources\DestroyCommentResource;
+use App\Http\Resources\StoreCommentResource;
+use App\Http\Resources\UpdateCommentResource;
 use App\Models\Comment;
-use Illuminate\Http\Request;
 use App\Models\Article;
 use App\Models\User;
+use App\Services\CommentService;
 
 class CommentController extends Controller
 {
+    protected $commentService;
 
-    //記事ごとにコメントを取得
+    public function __construct(CommentService $commentService)
+    {
+        $this->commentService = $commentService;
+    }
+
+    /**
+     * 記事ごとにコメントを取得する
+     */
     public function articleindex(Article $article)
     {
-        $comments = $article->comments()
-            ->orderBy('created_at', 'desc') //新しい順にソート
-            ->get();
-
+        $comments = $this->commentService->getCommentByArticle($article);
         return response()->json($comments, 200);
     }
 
-    //ユーザーごとのコメントを取得
+    /**
+     * ユーザごとにコメントを取得する
+     */
     public function userindex(User $user)
     {
-        $comments = $user->comments;
+        $comments = $this->commentService->getCommentsByUser($user);
         return response()->json($comments, 200);
     }
 
-    //新しいコメントを投稿
-    public function store(Request $request, Article $article)
+    /**
+     * コメントを投稿する
+     */
+    public function store(Article $article, StoreCommentRequest $request)
     {
-        $validated = $request->validate([
-            'content' => 'required|string|min:10|max:100',
-        ]);
-
-        $comment = $article->comments()->create([
-            'content' => $validated['content'],
+        $comment = $this->commentService->createComment($article, [
+            'content' => $request->input('content'),
             'user_id' => $request->user()->id,
         ]);
-
-        return response()->json($comment, 200);
+        return new StoreCommentResource($comment);
     }
 
-    //コメントを編集
-    public function update(Request $request, Comment $comment)
+    /**
+     * コメントを編集する
+     */
+    public function update(UpdateCommentRequest $request, Comment $comment)
     {
-        $validated = $request->validate([
-            'content' => 'sometimes|required|string|min:10|max:100',
+        $updatedComment = $this->commentService->updateComment($comment, [
+            'content' => $request->input('content'),
         ]);
-
-        //自分の投稿のみ編集可にする
-        if($comment->user_id !== $request->user()->id){
-            return response()->json(['message' => 'You are not authorized to update this comment'], 403);
-        }
-
-        $comment->update([
-            'content' => $validated['content'],
-        ]);
-
-        return response()->json($comment, 200);
+        return new UpdateCommentResource($updatedComment);
     }
 
-    //コメントを削除する
-    public function destroy(Request $request, Comment $comment)
+    /**
+     * コメントを削除する
+     */
+    public function destroy(DestroyCommentRequest $request, Comment $comment)
     {
-
-        //自分の投稿のみ削除可にする
-        if($comment->user_id !== $request->user()->id) {
-            return response()->json(['message' => 'You are not authorized to delete this comment'], 403);
-        }
-
-        $comment->delete();
-
-        return response()->json(['message' => 'Comment deleted', 200]);
+        $response = $this->commentService->deleteComment($comment);
+        return new DestroyCommentResource($comment);
     }
 }
