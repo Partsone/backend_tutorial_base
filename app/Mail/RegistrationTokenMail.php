@@ -17,3 +17,4 @@ class RegistrationTokenMail extends Mailable
             ->with(['token' => $this->token]);
     }
 }
+//bladeなしだからここのファイルはいらない。

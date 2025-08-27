@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use Illuminate\Support\Facades\Cache;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\AuthEmailRequest;
 use App\Models\EmailVerificationToken;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -13,12 +14,28 @@ use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
 
+/**
+ * 認証関連のAPIを提供するコントローラ
+ *
+ * - 仮登録メール送信
+ * - トークン検証
+ * - 本登録
+ * - ログイン / ログアウト
+ * - 自分のユーザー情報取得
+ */
 class AuthController extends Controller
 {
-    // 1) メール登録（トークン発行＆送信）
-    public function requestEmail(Request $request)
+    /**
+     * 1) メール登録（トークン発行＆送信）
+     *
+     * 指定されたメールアドレスに確認用トークンを送信する。
+     *
+     * @param  AuthEmailRequest  $request 検証済みリクエスト（email を含む）
+     * @return \Illuminate\Http\JsonResponse トークン送信の結果
+     */
+    public function requestEmail(AuthEmailRequest $request)
     {
-        $data = $request->validate(['email' => 'required|email']);
+        $data = $request->validated();
         // 既存ユーザーなら弾く
         if (User::where('email', $data['email'])->exists()) {
             return response()->json(['message' => 'このメールは登録済みです。ログインしてください。'], 409);
@@ -45,7 +62,16 @@ class AuthController extends Controller
         ], 200);
     }
 
-    // 2) トークン検証
+    /**
+     * 2) トークン検証
+     *
+     * メールアドレスと受信したトークンを照合し、登録用 ticket を発行する。
+     *
+     * @param  Request  $request リクエスト（email, token）
+     * @return \Illuminate\Http\JsonResponse 検証結果（ticket を含む）
+     *
+     * @throws ValidationException トークンが不正または期限切れ
+     */
     public function verifyToken(Request $request)
     {
         $data = $request->validate([
@@ -77,7 +103,14 @@ class AuthController extends Controller
         ], 200);
     }
 
-    // 3) 会員情報登録（名前/パスワード）
+    /**
+     * 3) 会員情報登録（名前 / パスワード）
+     *
+     * ticket を使ってユーザーを新規登録する。
+     *
+     * @param  Request  $request リクエスト（ticket, name, password）
+     * @return \Illuminate\Http\JsonResponse 登録したユーザーとAPIトークン
+     */
     public function register(Request $request)
     {
         $data = $request->validate([
@@ -109,7 +142,16 @@ class AuthController extends Controller
         return response()->json(['user' => $user, 'token' => $token], 201);
     }
 
-    // 4) ログイン
+    /**
+     * 4) ログイン
+     *
+     * メールアドレスとパスワードで認証し、APIトークンを発行する。
+     *
+     * @param  Request  $request リクエスト（email, password）
+     * @return \Illuminate\Http\JsonResponse ユーザー情報とAPIトークン
+     *
+     * @throws ValidationException 認証失敗
+     */
     public function login(Request $request)
     {
         $data = $request->validate([
@@ -126,14 +168,28 @@ class AuthController extends Controller
         return response()->json(['user' => $user, 'token' => $token], 200);
     }
 
-    // 5) ログアウト
+    /**
+     * 5) ログアウト
+     *
+     * 現在のアクセストークンを無効化する。
+     *
+     * @param  Request  $request
+     * @return \Illuminate\Http\JsonResponse ログアウト結果
+     */
     public function logout(Request $request)
     {
         $request->user()->currentAccessToken()?->delete();
         return response()->json(['message' => 'ログアウトしました'], 200);
     }
 
-    // 認証確認用
+    /**
+     * 認証確認用
+     *
+     * 現在認証されているユーザー情報を返す。
+     *
+     * @param  Request  $request
+     * @return \Illuminate\Http\JsonResponse ユーザー情報
+     */
     public function me(Request $request)
     {
         return response()->json($request->user(), 200);

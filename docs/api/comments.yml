@@ -1,81 +1,306 @@
 openapi: 3.0.3
 info:
-  title: Comments API
-  version: 1.0.0
+  title: Comments API with Auth
+  version: 1.1.0
 servers:
   - url: http://localhost/api
+
 paths:
-  /articles/{article}/comments:
+  /auth/register/email:
+    post:
+      summary: メールアドレス仮登録（確認トークン送信）
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthEmailRequest"
+            examples:
+              sample:
+                value: { email: "you@example.com" }
+      responses:
+        "200": { description: OK（Mailpit にトークンが届く） }
+        "409": { description: 既に登録済みメール }
+
+  /auth/register/verify:
+    post:
+      summary: メール確認（受信トークンの検証）
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyTokenRequest"
+            examples:
+              sample:
+                value: { email: "you@example.com", token: "受信トークン32文字" }
+      responses:
+        "200":
+          description: OK（次の登録で使う ticket を返す）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  ticket: { type: string }
+                  expires_in_minutes: { type: integer }
+        "422": { description: トークン不正/期限切れ }
+
+  /auth/register/complete:
+    post:
+      summary: 会員登録（名前・パスワード）
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+            examples:
+              sample:
+                value:
+                  ticket: "verify でもらった ticket"
+                  name: "山田太郎"
+                  password: "password123"
+      responses:
+        "201":
+          description: 登録成功（User と API トークン）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthTokenResponse"
+        "403": { description: ticket 不正/期限切れ }
+        "409": { description: 既に登録済みメール }
+
+  /auth/login:
+    post:
+      summary: ログイン（メール＋パスワード）
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+            examples:
+              sample:
+                value: { email: "you@example.com", password: "password123" }
+      responses:
+        "200":
+          description: ログイン成功（User と API トークン）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthTokenResponse"
+        "422": { description: バリデーションエラー }
+        "401": { description: 認証失敗 }
+
+  /auth/logout:
+    post:
+      summary: ログアウト（現在のトークンを失効）
+      tags: [Auth]
+      security:
+        - bearerAuth: []
+      responses:
+        "200": { description: OK }
+        "401": { description: 未認証 }
+
+  /auth/me:
     get:
-      summary: コメント一覧（新しい順）
-      parameters:
-        - in: path
-          name: article
-          schema: { type: integer }
-          required: true
-        - in: query
-          name: page
-          schema: { type: integer, minimum: 1 }
+      summary: 自分のユーザー情報
+      tags: [Auth]
+      security:
+        - bearerAuth: []
       responses:
         "200":
           description: OK
-    post:
-      summary: コメント作成
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401": { description: 未認証 }
+
+  /articles/{article}/comments:
+    get:
+      summary: コメント一覧（新しい順）
+      tags: [Comments]
       parameters:
         - in: path
           name: article
-          schema: { type: integer }
           required: true
+          schema: { type: integer }
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+      responses:
+        "200":
+          description: OK（ページング結果）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedComments"
+    post:
+      summary: コメント作成（ログイン必須）
+      tags: [Comments]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: article
+          required: true
+          schema: { type: integer }
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/CommentCreate"
+            examples:
+              sample:
+                value: { body: "10文字以上100文字以内のコメント" }
       responses:
-        "201": { description: Created }
-        "422": { description: Validation Error }
+        "201":
+          description: 作成成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Comment"
+        "401": { description: 未認証 }
+        "422": { description: バリデーションエラー }
+
   /articles/{article}/comments/{comment}:
     put:
       summary: コメント更新（本人のみ）
+      tags: [Comments]
+      security:
+        - bearerAuth: []
       parameters:
         - in: path
           name: article
-          schema: { type: integer }
           required: true
+          schema: { type: integer }
         - in: path
           name: comment
-          schema: { type: integer }
           required: true
+          schema: { type: integer }
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/CommentUpdate"
+            examples:
+              sample:
+                value: { body: "編集後のコメント（10文字以上）" }
       responses:
-        "200": { description: OK }
-        "403": { description: Forbidden }
-        "404": { description: Not Found }
-        "422": { description: Validation Error }
+        "200":
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Comment"
+        "401": { description: 未認証 }
+        "403": { description: 本人以外/禁止 }
+        "404": { description: 見つからない }
+        "422": { description: バリデーションエラー }
     delete:
       summary: コメント削除（本人のみ）
+      tags: [Comments]
+      security:
+        - bearerAuth: []
       parameters:
         - in: path
           name: article
-          schema: { type: integer }
           required: true
+          schema: { type: integer }
         - in: path
           name: comment
-          schema: { type: integer }
           required: true
+          schema: { type: integer }
       responses:
-        "200": { description: Deleted }
-        "403": { description: Forbidden }
-        "404": { description: Not Found }
+        "200": { description: 削除成功 }
+        "401": { description: 未認証 }
+        "403": { description: 本人以外/禁止 }
+        "404": { description: 見つからない }
 
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Token # Sanctum は不透明トークン。Swagger では "Bearer <token>" を入れる。
+
   schemas:
+    # ===== Auth =====
+    AuthEmailRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+
+    VerifyTokenRequest:
+      type: object
+      required: [email, token]
+      properties:
+        email:
+          type: string
+          format: email
+        token:
+          type: string
+          minLength: 10
+
+    RegisterRequest:
+      type: object
+      required: [ticket, name, password]
+      properties:
+        ticket: { type: string }
+        name: { type: string, maxLength: 255 }
+        password: { type: string, minLength: 8 }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+
+    AuthTokenResponse:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        token:
+          type: string
+          description: "Authorization: Bearer {token} で使用"
+
+    User:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: string, format: email }
+        created_at: { type: string, format: date-time, nullable: true }
+        updated_at: { type: string, format: date-time, nullable: true }
+
+    # ===== Comments =====
+    Comment:
+      type: object
+      properties:
+        id: { type: integer }
+        article_id: { type: integer }
+        user_id: { type: integer }
+        body:
+          type: string
+          minLength: 10
+          maxLength: 100
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
     CommentCreate:
       type: object
       required: [body]
@@ -84,6 +309,33 @@ components:
           type: string
           minLength: 10
           maxLength: 100
+
     CommentUpdate:
       allOf:
         - $ref: "#/components/schemas/CommentCreate"
+
+    PaginatedComments:
+      type: object
+      properties:
+        current_page: { type: integer }
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/Comment" }
+        first_page_url: { type: string }
+        from: { type: integer, nullable: true }
+        last_page: { type: integer }
+        last_page_url: { type: string }
+        links:
+          type: array
+          items:
+            type: object
+            properties:
+              url: { type: string, nullable: true }
+              label: { type: string }
+              active: { type: boolean }
+        next_page_url: { type: string, nullable: true }
+        path: { type: string }
+        per_page: { type: integer }
+        prev_page_url: { type: string, nullable: true }
+        to: { type: integer, nullable: true }
+        total: { type: integer }

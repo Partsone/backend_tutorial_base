@@ -7,9 +7,18 @@ use App\Models\Comment;
 use App\Models\Article;
 use Illuminate\Http\Request;
 
+/**
+ * コメント関連のAPIを提供するコントローラ
+ */
+
 class CommentController extends Controller
 {
-    // 一覧
+    /**
+     * 指定された記事のコメント一覧を取得する（新しい順）
+     *
+     * @param  Article  $article  対象の記事
+     * @return \Illuminate\Http\JsonResponse コメント一覧（ページネーションあり）
+     */
     public function index(Article $article)
     {
         $comments = $article->comments()
@@ -19,7 +28,13 @@ class CommentController extends Controller
         return response()->json($comments, 200);
     }
 
-    // 作成
+    /**
+     * 指定された記事にコメントを作成する
+     *
+     * @param  Request  $request  リクエスト（body を含む）
+     * @param  Article  $article  コメント対象の記事
+     * @return \Illuminate\Http\JsonResponse 作成したコメント
+     */
     public function store(Request $request, Article $article)
     {
         $validated = $request->validate([
@@ -37,14 +52,20 @@ class CommentController extends Controller
         return response()->json($comment, 201);
     }
 
-    // 更新
+    /**
+     * コメントを更新する（本人のみ）
+     *
+     * @param  Request  $request   リクエスト（更新する body を含む）
+     * @param  Article  $article   コメントが属する記事
+     * @param  Comment  $comment   更新対象のコメント
+     * @return \Illuminate\Http\JsonResponse 更新後のコメント
+     */
     public function update(Request $request, Article $article, Comment $comment)
     {
         if ($comment->article_id !== $article->id) {
             return response()->json(['message' => 'Not Found'], 404);
         }
 
-        // 認可チェック（Policy 呼び出し）
         $this->authorize('update', $comment);
 
         $validated = $request->validate([
@@ -56,7 +77,13 @@ class CommentController extends Controller
         return response()->json($comment, 200);
     }
 
-    // 削除
+    /**
+     * コメントを削除する（本人のみ）
+     *
+     * @param  Article  $article  コメントが属する記事
+     * @param  Comment  $comment  削除対象のコメント
+     * @return \Illuminate\Http\JsonResponse 削除結果
+     */
     public function destroy(Article $article, Comment $comment)
     {
         if ($comment->article_id !== $article->id) {
@@ -70,7 +97,10 @@ class CommentController extends Controller
 
         return response()->json(['message' => 'Deleted'], 200);
     }
-
+    /**
+     * コンストラクタ
+     * 開発中は特定ユーザーでログインする処理を挟むことができる
+     */
     public function __construct()
     {
         $this->middleware(function ($request, $next) {
